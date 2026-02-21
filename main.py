@@ -327,8 +327,8 @@ def main():
     input_folder = get_input_folder()
 
     # Scan for media files
-    console.print("\n[cyan]Scanning for media files...[/cyan]")
-    files_with_json, files_without_json = scan_folder(input_folder)
+    with console.status("[cyan]Scanning for media files...[/cyan]", spinner="dots"):
+        files_with_json, files_without_json = scan_folder(input_folder)
 
     total_files = len(files_with_json) + len(files_without_json)
     if total_files == 0:
@@ -363,13 +363,13 @@ def main():
     # Build list of files with dates for guessing
     files_with_dates = []
     if enable_date_guessing:
-        console.print("\n[cyan]Building date index for guessing...[/cyan]")
-        for media_file, json_file in files_with_json:
-            metadata = parse_json(json_file)
-            if metadata:
-                dt = extract_datetime(metadata)
-                if dt:
-                    files_with_dates.append((media_file, dt))
+        with console.status("[cyan]Building date index for guessing...[/cyan]", spinner="dots"):
+            for media_file, json_file in files_with_json:
+                metadata = parse_json(json_file)
+                if metadata:
+                    dt = extract_datetime(metadata)
+                    if dt:
+                        files_with_dates.append((media_file, dt))
         console.print(f"[green]✓ Found {len(files_with_dates)} files with dates for reference[/green]")
 
     # Process files with progress bar
