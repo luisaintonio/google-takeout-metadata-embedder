@@ -327,14 +327,16 @@ def main():
     input_folder = get_input_folder()
 
     # Scan for media files
-    with console.status("[cyan]Scanning for media files...[/cyan]", spinner="dots"):
+    with console.status("[cyan]Scanning directory tree for photos and videos...[/cyan]", spinner="dots"):
         files_with_json, files_without_json = scan_folder(input_folder)
 
     total_files = len(files_with_json) + len(files_without_json)
     if total_files == 0:
-        console.print("\n[yellow]No media files found.[/yellow]")
+        console.print("\n[yellow]✗ No media files found.[/yellow]")
         console.print("Make sure you're pointing to a Google Takeout export folder.")
         sys.exit(0)
+
+    console.print(f"[green]✓ Scan complete: found {total_files} media file(s)[/green]")
 
     # Display scan summary
     display_scan_summary(files_with_json, files_without_json)
@@ -363,19 +365,20 @@ def main():
     # Build list of files with dates for guessing
     files_with_dates = []
     if enable_date_guessing:
-        with console.status("[cyan]Building date index for guessing...[/cyan]", spinner="dots"):
+        with console.status(f"[cyan]Analyzing {len(files_with_json)} files to build date reference index...[/cyan]", spinner="dots"):
             for media_file, json_file in files_with_json:
                 metadata = parse_json(json_file)
                 if metadata:
                     dt = extract_datetime(metadata)
                     if dt:
                         files_with_dates.append((media_file, dt))
-        console.print(f"[green]✓ Found {len(files_with_dates)} files with dates for reference[/green]")
+        console.print(f"[green]✓ Built date index: {len(files_with_dates)} files with dates available for guessing[/green]")
 
     # Process files with progress bar
-    console.print("\n[cyan]Processing files...[/cyan]\n")
+    console.print(f"\n[cyan]Processing {total_files} file(s)...[/cyan]\n")
     successful = 0
     failed = 0
+    current_file = 0
 
     with Progress(
         SpinnerColumn(),
@@ -389,7 +392,8 @@ def main():
 
         # Process files with JSON metadata
         for media_file, json_file in files_with_json:
-            progress.update(task, description=f"Processing {media_file.name[:30]}...")
+            current_file += 1
+            progress.update(task, description=f"[{current_file}/{total_files}] {media_file.name[:30]}...")
 
             success, message = process_file(media_file, json_file, input_folder)
 
@@ -404,7 +408,8 @@ def main():
 
         # Process files without JSON metadata
         for media_file in files_without_json:
-            progress.update(task, description=f"Processing {media_file.name[:30]}...")
+            current_file += 1
+            progress.update(task, description=f"[{current_file}/{total_files}] {media_file.name[:30]}...")
 
             # Try to guess date if enabled
             guessed_date = None
