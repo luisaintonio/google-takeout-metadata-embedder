@@ -1,6 +1,7 @@
 """Exiftool command building and execution for metadata embedding."""
 
 import subprocess
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -8,8 +9,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Path to exiftool binary
-EXIFTOOL_PATH = "/opt/homebrew/bin/exiftool"
+
+def get_exiftool_path() -> Optional[str]:
+    """Find exiftool binary in system PATH.
+
+    Returns:
+        Path to exiftool binary or None if not found
+    """
+    return shutil.which("exiftool")
 
 
 def check_exiftool() -> bool:
@@ -18,16 +25,21 @@ def check_exiftool() -> bool:
     Returns:
         True if exiftool is installed and accessible
     """
+    exiftool_path = get_exiftool_path()
+    if not exiftool_path:
+        logger.error("exiftool not found in system PATH")
+        return False
+
     try:
         result = subprocess.run(
-            [EXIFTOOL_PATH, "-ver"],
+            [exiftool_path, "-ver"],
             capture_output=True,
             text=True,
             timeout=5
         )
         if result.returncode == 0:
             version = result.stdout.strip()
-            logger.info(f"Found exiftool version: {version}")
+            logger.info(f"Found exiftool version {version} at: {exiftool_path}")
             return True
     except (subprocess.SubprocessError, FileNotFoundError) as e:
         logger.error(f"exiftool not found: {e}")
@@ -81,7 +93,11 @@ def build_image_command(
     Returns:
         Command arguments list
     """
-    cmd = [EXIFTOOL_PATH, "-overwrite_original"]
+    exiftool_path = get_exiftool_path()
+    if not exiftool_path:
+        raise RuntimeError("exiftool not found in system PATH")
+
+    cmd = [exiftool_path, "-overwrite_original"]
 
     # Date/time tags
     if dt:
@@ -131,7 +147,11 @@ def build_video_command(file_path: Path, dt: Optional[datetime]) -> List[str]:
     Returns:
         Command arguments list
     """
-    cmd = [EXIFTOOL_PATH, "-overwrite_original"]
+    exiftool_path = get_exiftool_path()
+    if not exiftool_path:
+        raise RuntimeError("exiftool not found in system PATH")
+
+    cmd = [exiftool_path, "-overwrite_original"]
 
     # Video files: use QuickTime tags
     if dt:

@@ -6,10 +6,9 @@ from typing import Optional
 from datetime import datetime
 import logging
 
-logger = logging.getLogger(__name__)
+from lib.exiftool import get_exiftool_path
 
-# Path to exiftool binary
-EXIFTOOL_PATH = "/opt/homebrew/bin/exiftool"
+logger = logging.getLogger(__name__)
 
 
 def read_exif_date(media_path: Path) -> Optional[datetime]:
@@ -21,9 +20,14 @@ def read_exif_date(media_path: Path) -> Optional[datetime]:
     Returns:
         datetime from EXIF or None if not found
     """
+    exiftool_path = get_exiftool_path()
+    if not exiftool_path:
+        logger.warning("exiftool not found, cannot read EXIF data")
+        return None
+
     try:
         result = subprocess.run(
-            [EXIFTOOL_PATH, "-DateTimeOriginal", "-s3", str(media_path)],
+            [exiftool_path, "-DateTimeOriginal", "-s3", str(media_path)],
             capture_output=True,
             text=True,
             timeout=10
