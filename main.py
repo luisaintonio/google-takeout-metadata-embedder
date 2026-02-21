@@ -12,6 +12,8 @@ from pathlib import Path
 import shutil
 from datetime import datetime
 from typing import List, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
@@ -31,6 +33,7 @@ from lib.metadata import (
 from lib.organizer import get_output_path, ensure_output_directory
 from lib.exiftool import check_exiftool, embed_metadata
 from lib.exif_reader import read_exif_date, has_matching_metadata
+from lib.state import ProcessingState
 
 # Setup logging
 # File handler: logs everything (INFO and above) to file for debugging
@@ -380,11 +383,73 @@ def main():
                         files_with_dates.append((media_file, dt))
         console.print(f"[green]✓ Built date index: {len(files_with_dates)} files with dates available for guessing[/green]")
 
-    # Process files with progress bar
-    console.print(f"\n[cyan]Processing {total_files} file(s)...[/cyan]\n")
+    # Initialize processing state for resume capability
+    state_file = input_folder / ".processing_state.json"
+    state = ProcessingState(state_file)
+
+    # Filter out already-processed files
+    files_to_process_with_json = [(m, j) for m, j in files_with_json if not state.is_processed(m)]
+    files_to_process_without_json = [m for m in files_without_json if not state.is_processed(m)]
+
+    already_processed = (len(files_with_json) - len(files_to_process_with_json)) + \
+                       (len(files_without_json) - len(files_to_process_without_json))
+
+    if already_processed > 0:
+        console.print(f"\n[cyan]Resume detected: {already_processed} file(s) already processed[/cyan]")
+        console.print(f"[green]✓ Skipping {already_processed} previously completed files[/green]")
+
+    files_remaining = len(files_to_process_with_json) + len(files_to_process_without_json)
+
+    if files_remaining == 0:
+        console.print("\n[green]✓ All files already processed![/green]")
+        console.print("\n[dim]To reprocess, delete .processing_state.json in the input folder[/dim]")
+        output_folder = input_folder / "Output"
+        console.print(f"\n[cyan]Output location:[/cyan] {output_folder}")
+        sys.exit(0)
+
+    # Process files with progress bar using parallel workers
+    console.print(f"\n[cyan]Processing {files_remaining} file(s) with parallel workers...[/cyan]\n")
+
     successful = 0
     failed = 0
     current_file = 0
+    lock = threading.Lock()
+
+    # Determine number of workers (4-8 based on CPU count)
+    import multiprocessing
+    max_workers = min(8, max(4, multiprocessing.cpu_count() - 1))
+    console.print(f"[dim]Using {max_workers} parallel workers[/dim]\n")
+
+    def process_with_state(args):
+        """Wrapper to process file and update state."""
+        media_file, json_file, input_root, guessed_date = args
+
+        # Process the file
+        if json_file:
+            success, message = process_file(media_file, json_file, input_root)
+        else:
+            success, message = process_file_without_json(media_file, input_root, guessed_date)
+
+        # Update state on success
+        if success:
+            with lock:
+                state.mark_processed(media_file)
+
+        return media_file, success, message
+
+    # Prepare all tasks
+    tasks = []
+
+    # Add files with JSON
+    for media_file, json_file in files_to_process_with_json:
+        tasks.append((media_file, json_file, input_folder, None))
+
+    # Add files without JSON
+    for media_file in files_to_process_without_json:
+        guessed_date = None
+        if enable_date_guessing:
+            guessed_date = guess_date_from_similar_files(media_file, files_with_dates)
+        tasks.append((media_file, None, input_folder, guessed_date))
 
     with Progress(
         SpinnerColumn(),
@@ -395,47 +460,43 @@ def main():
         console=console
     ) as progress:
 
-        task = progress.add_task("Processing...", total=total_files)
+        task = progress.add_task("Processing...", total=files_remaining)
 
-        # Process files with JSON metadata
-        for media_file, json_file in files_with_json:
-            current_file += 1
-            progress.update(task, description=f"[{current_file}/{total_files}] {media_file.name[:30]}...")
+        # Process files in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_file = {executor.submit(process_with_state, args): args[0] for args in tasks}
 
-            success, message = process_file(media_file, json_file, input_folder)
+            # Process completed tasks as they finish
+            for future in as_completed(future_to_file):
+                media_file, success, message = future.result()
 
-            if success:
-                successful += 1
-                logger.info(f"✓ {media_file.name}: {message}")
-            else:
-                failed += 1
-                logger.error(f"✗ {media_file.name}: {message}")
+                with lock:
+                    current_file += 1
+                    progress.update(task, description=f"[{current_file}/{files_remaining}] {media_file.name[:30]}...")
 
-            progress.advance(task)
+                    if success:
+                        successful += 1
+                        logger.info(f"✓ {media_file.name}: {message}")
+                    else:
+                        failed += 1
+                        logger.error(f"✗ {media_file.name}: {message}")
 
-        # Process files without JSON metadata
-        for media_file in files_without_json:
-            current_file += 1
-            progress.update(task, description=f"[{current_file}/{total_files}] {media_file.name[:30]}...")
+                    progress.advance(task)
 
-            # Try to guess date if enabled
-            guessed_date = None
-            if enable_date_guessing:
-                guessed_date = guess_date_from_similar_files(media_file, files_with_dates)
-
-            success, message = process_file_without_json(media_file, input_folder, guessed_date)
-
-            if success:
-                successful += 1
-                logger.info(f"✓ {media_file.name}: {message}")
-            else:
-                failed += 1
-                logger.error(f"✗ {media_file.name}: {message}")
-
-            progress.advance(task)
+    # Save final state
+    state.save_state()
+    console.print(f"\n[dim]Saved processing state to {state_file.name}[/dim]")
 
     # Display final summary
-    display_final_summary(total_files, successful, failed)
+    display_final_summary(files_remaining, successful, failed)
+
+    # Show completion message
+    if failed == 0 and files_remaining > 0:
+        console.print("\n[green]✓ Processing complete! Cleaning up state file...[/green]")
+        state.clear()
+    elif already_processed > 0:
+        console.print(f"\n[cyan]Session complete. Total processed: {already_processed + successful} files[/cyan]")
 
     # Show output location
     output_folder = input_folder / "Output"
@@ -446,7 +507,8 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        console.print("\n\n[yellow]Interrupted by user[/yellow]")
+        console.print("\n\n[yellow]⚠ Interrupted by user[/yellow]")
+        console.print("[green]✓ Progress has been saved. Run again to resume from where you left off.[/green]")
         sys.exit(1)
     except Exception as e:
         console.print(f"\n[red]Fatal error: {e}[/red]")
