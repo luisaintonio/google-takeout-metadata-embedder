@@ -49,7 +49,7 @@ Before submitting a PR:
 
 ```bash
 # Clone your fork
-git clone https://github.com/yourusername/google-takeout-metadata-embedder.git
+git clone https://github.com/luisaintonio/google-takeout-metadata-embedder.git
 cd google-takeout-metadata-embedder
 
 # Run setup

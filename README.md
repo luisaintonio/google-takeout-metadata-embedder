@@ -24,7 +24,7 @@ A Python tool that **organizes ALL your photos by date** - whether they're from 
 
 ```bash
 # 1. Clone or download this repository
-git clone https://github.com/yourusername/google-takeout-metadata-embedder.git
+git clone https://github.com/luisaintonio/google-takeout-metadata-embedder.git
 cd google-takeout-metadata-embedder
 
 # 2. Run setup (installs dependencies)
@@ -93,7 +93,7 @@ Download from [exiftool.org](https://exiftool.org/)
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/google-takeout-metadata-embedder.git
+git clone https://github.com/luisaintonio/google-takeout-metadata-embedder.git
 cd google-takeout-metadata-embedder
 
 # Run setup script (checks dependencies, creates venv, installs packages)
