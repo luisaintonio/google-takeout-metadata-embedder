@@ -286,7 +286,7 @@ After processing, verify the metadata was embedded:
 
 ```bash
 # Check a processed file
-exiftool ~/path/to/Output/2022/December/IMG_1234.JPG
+exiftool Output/2022/December/IMG_1234.JPG
 
 # You should see:
 # Date/Time Original    : 2022:12:15 14:30:45
@@ -355,7 +355,7 @@ Checking dependencies...
 ✓ exiftool is available
 
 Enter the path to your Google Takeout folder:
-> /Users/luis/Desktop/media_samples
+> /Users/yourname/Downloads/Takeout
 
 Scanning for media files...
 Found 9 media file(s) with metadata
@@ -389,7 +389,7 @@ Processing files...
 
 Check metadata_embedder.log for detailed information
 
-Output location: /Users/luis/Desktop/media_samples/Output
+Output location: /Users/yourname/Downloads/Takeout/Output
 ```
 
 ## License
