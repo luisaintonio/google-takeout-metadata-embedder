@@ -33,13 +33,19 @@ from lib.exiftool import check_exiftool, embed_metadata
 from lib.exif_reader import read_exif_date, has_matching_metadata
 
 # Setup logging
+# File handler: logs everything (INFO and above) to file for debugging
+file_handler = logging.FileHandler('metadata_embedder.log')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# Console handler: only show warnings and errors, not every file processed
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.WARNING)
+console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('metadata_embedder.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[file_handler, console_handler]
 )
 logger = logging.getLogger(__name__)
 
