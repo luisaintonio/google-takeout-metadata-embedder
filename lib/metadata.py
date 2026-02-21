@@ -18,11 +18,21 @@ def parse_json(json_path: Path) -> Optional[dict]:
     Returns:
         Parsed JSON dict or None if parsing fails
     """
+    # Try UTF-8 first (most common)
     try:
         with open(json_path, 'r', encoding='utf-8') as f:
             return json.load(f)
+    except UnicodeDecodeError:
+        # Fallback to latin-1 which can handle any byte sequence
+        logger.warning(f"UTF-8 decode failed for {json_path.name}, trying latin-1 encoding")
+        try:
+            with open(json_path, 'r', encoding='latin-1') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError, UnicodeDecodeError) as e:
+            logger.error(f"Failed to parse JSON {json_path.name} with latin-1: {e}")
+            return None
     except (json.JSONDecodeError, IOError) as e:
-        logger.error(f"Failed to parse JSON {json_path}: {e}")
+        logger.error(f"Failed to parse JSON {json_path.name}: {e}")
         return None
 
 

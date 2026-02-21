@@ -62,8 +62,8 @@ def find_matching_json(media_file: Path) -> Optional[Path]:
                 if title == media_name:
                     logger.debug(f"Found JSON via title match: {json_path.name}")
                     return json_path
-        except (json.JSONDecodeError, IOError) as e:
-            logger.debug(f"Skipping invalid JSON {json_path}: {e}")
+        except (json.JSONDecodeError, IOError, UnicodeDecodeError) as e:
+            logger.debug(f"Skipping invalid JSON {json_path.name}: {e}")
             continue
 
     logger.debug(f"No matching JSON found for: {media_name}")
