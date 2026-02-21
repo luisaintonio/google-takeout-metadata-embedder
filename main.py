@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import List, Tuple, Optional
 
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich.table import Table
 from rich.panel import Panel
 from rich import box
@@ -391,6 +391,7 @@ def main():
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console
     ) as progress:
 
