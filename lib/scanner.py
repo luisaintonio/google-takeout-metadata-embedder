@@ -109,7 +109,7 @@ def scan_folder(root_path: Path) -> Tuple[List[Tuple[Path, Path]], List[Path]]:
             logger.debug(f"Paired: {file_path.name} <-> {json_path.name}")
         else:
             media_without_json.append(file_path)
-            logger.info(f"No JSON metadata found for: {file_path}")
+            logger.debug(f"No JSON metadata found for: {file_path}")
 
     logger.info(f"Found {len(media_with_json)} media files with JSON metadata")
     logger.info(f"Found {len(media_without_json)} media files without JSON metadata")
