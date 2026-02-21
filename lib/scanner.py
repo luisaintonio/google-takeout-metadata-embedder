@@ -53,6 +53,10 @@ def find_matching_json(media_file: Path) -> Optional[Path]:
     matching_jsons = list(parent.glob(pattern))
 
     for json_path in matching_jsons:
+        # Skip macOS resource fork JSON files
+        if json_path.name.startswith('._'):
+            continue
+
         try:
             with open(json_path, 'r', encoding='utf-8') as f:
                 metadata = json.load(f)
@@ -92,6 +96,10 @@ def scan_folder(root_path: Path) -> Tuple[List[Tuple[Path, Path]], List[Path]]:
     for file_path in root_path.rglob('*'):
         # Skip if not a file
         if not file_path.is_file():
+            continue
+
+        # Skip macOS resource fork files (._filename) but keep real files (_filename)
+        if file_path.name.startswith('._'):
             continue
 
         # Check if it's a media file
