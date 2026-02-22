@@ -74,11 +74,12 @@ def find_matching_json(media_file: Path) -> Optional[Path]:
     return None
 
 
-def scan_folder(root_path: Path) -> Tuple[List[Tuple[Path, Path]], List[Path]]:
+def scan_folder(root_path: Path, progress_callback=None) -> Tuple[List[Tuple[Path, Path]], List[Path]]:
     """Recursively scan folder for media files with and without JSON metadata.
 
     Args:
         root_path: Root directory to scan
+        progress_callback: Optional callback function(photo_count, video_count) called for each file found
 
     Returns:
         Tuple of:
@@ -91,6 +92,13 @@ def scan_folder(root_path: Path) -> Tuple[List[Tuple[Path, Path]], List[Path]]:
 
     media_with_json = []
     media_without_json = []
+
+    # Extensions for photos vs videos
+    photo_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.heic', '.webp', '.dng', '.nef'}
+    video_extensions = {'.mov', '.mp4', '.avi'}
+
+    photo_count = 0
+    video_count = 0
 
     # Recursively find all files
     for file_path in root_path.rglob('*'):
@@ -110,6 +118,12 @@ def scan_folder(root_path: Path) -> Tuple[List[Tuple[Path, Path]], List[Path]]:
         if 'Output' in file_path.parts:
             continue
 
+        # Count photos vs videos
+        if file_path.suffix.lower() in photo_extensions:
+            photo_count += 1
+        elif file_path.suffix.lower() in video_extensions:
+            video_count += 1
+
         # Try to find matching JSON
         json_path = find_matching_json(file_path)
         if json_path:
@@ -118,6 +132,10 @@ def scan_folder(root_path: Path) -> Tuple[List[Tuple[Path, Path]], List[Path]]:
         else:
             media_without_json.append(file_path)
             logger.debug(f"No JSON metadata found for: {file_path}")
+
+        # Call progress callback if provided
+        if progress_callback:
+            progress_callback(photo_count, video_count)
 
     logger.info(f"Found {len(media_with_json)} media files with JSON metadata")
     logger.info(f"Found {len(media_without_json)} media files without JSON metadata")

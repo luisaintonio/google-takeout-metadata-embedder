@@ -19,6 +19,8 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich.table import Table
 from rich.panel import Panel
+from rich.live import Live
+from rich.text import Text
 from rich import box
 
 from lib.scanner import scan_folder, guess_date_from_similar_files
@@ -335,9 +337,27 @@ def main():
     # Get input folder
     input_folder = get_input_folder()
 
-    # Scan for media files
-    with console.status("[cyan]Scanning directory tree for photos and videos...[/cyan]", spinner="dots"):
-        files_with_json, files_without_json = scan_folder(input_folder)
+    # Scan for media files with live count display
+    console.print("\n[cyan]Scanning directory tree for photos and videos...[/cyan]")
+
+    photo_count = 0
+    video_count = 0
+
+    def update_scan_progress(photos, videos):
+        """Callback to update scan progress."""
+        nonlocal photo_count, video_count
+        photo_count = photos
+        video_count = videos
+
+    with Live(console=console, refresh_per_second=4) as live:
+        def progress_callback(photos, videos):
+            update_scan_progress(photos, videos)
+            status_text = Text()
+            status_text.append("⠋ ", style="cyan")
+            status_text.append(f"Found {photos} photo(s) and {videos} video(s) so far...", style="dim")
+            live.update(status_text)
+
+        files_with_json, files_without_json = scan_folder(input_folder, progress_callback)
 
     total_files = len(files_with_json) + len(files_without_json)
     if total_files == 0:
