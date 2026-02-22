@@ -405,9 +405,10 @@ def reorganize_unknown(unknown_folder: Path, use_file_mtime: bool = True, min_ag
             dt, source = date_result
 
             # Calculate new output path
-            # We need to create a fake "input_root" that points to output_base
-            # So that get_output_path creates the right structure
-            new_output_path = get_output_path(output_base, media_file, dt)
+            # get_output_path expects input_root (will add "Output" itself)
+            # So we pass output_base.parent to avoid creating Output/Output
+            input_root = output_base.parent
+            new_output_path = get_output_path(input_root, media_file, dt)
 
             # Check if file would stay in Unknown
             if "Unknown" in new_output_path.parts:
