@@ -511,6 +511,40 @@ def main():
     # Get input folder
     input_folder = get_input_folder()
 
+    # Check if Output/Unknown folder exists and has files
+    output_folder = input_folder / "Output"
+    unknown_folder = output_folder / "Unknown"
+
+    if unknown_folder.exists() and unknown_folder.is_dir():
+        # Count media files in Unknown folder
+        from lib.scanner import MEDIA_EXTENSIONS
+        unknown_files = [f for f in unknown_folder.iterdir()
+                        if f.is_file() and f.suffix.lower() in MEDIA_EXTENSIONS
+                        and not f.name.startswith('._')]
+
+        if len(unknown_files) > 0:
+            console.print(f"\n[yellow]Found existing Unknown folder with {len(unknown_files)} media file(s)[/yellow]")
+            console.print(f"[dim]Location: {unknown_folder}[/dim]\n")
+
+            console.print("Would you like to:")
+            console.print("  [cyan]1.[/cyan] Reorganize Unknown folder with enhanced date detection")
+            console.print("  [cyan]2.[/cyan] Process the entire folder normally")
+            console.print("\n[yellow]Enter choice (1 or 2):[/yellow]")
+
+            choice = input("> ").strip()
+
+            if choice == "1":
+                # Ask about file modification time option
+                console.print("\n[yellow]Use file modification time as fallback? (y/n):[/yellow]")
+                console.print("[dim]Recommended: y - Uses EXIF + safe file dates (older than 30 days)[/dim]")
+                use_mtime = input("> ").strip().lower() == 'y'
+
+                # Run reorganization mode
+                reorganize_unknown(unknown_folder, use_file_mtime=use_mtime, min_age_days=30)
+                return
+            elif choice != "2":
+                console.print("[yellow]Invalid choice, defaulting to normal processing...[/yellow]")
+
     # Scan for media files with live count display
     console.print("\n[cyan]Scanning directory tree for photos and videos...[/cyan]")
 
@@ -698,23 +732,18 @@ def main():
 
 
 if __name__ == "__main__":
-    # Parse command-line arguments
+    # Parse command-line arguments (for advanced usage)
     parser = argparse.ArgumentParser(
         description="Google Takeout Metadata Embedder - Organize photos by date",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Normal mode: process entire Google Takeout folder
+  # Normal mode: run with interactive prompts
   python main.py
+  ./run.sh
 
-  # Reorganize Unknown folder with enhanced date detection
-  python main.py --reorganize-unknown /path/to/Output/Unknown
-
-  # Reorganize without using file modification time (EXIF only)
+  # Advanced: Reorganize Unknown folder directly (bypass prompts)
   python main.py --reorganize-unknown /path/to/Output/Unknown --no-file-mtime
-
-  # Custom minimum age for file modification time
-  python main.py --reorganize-unknown /path/to/Output/Unknown --min-age-days 60
         """
     )
 
@@ -722,13 +751,13 @@ Examples:
         '--reorganize-unknown',
         type=str,
         metavar='PATH',
-        help='Path to Unknown folder to reorganize using enhanced date detection'
+        help='[Advanced] Path to Unknown folder to reorganize'
     )
 
     parser.add_argument(
         '--no-file-mtime',
         action='store_true',
-        help='Disable file modification time fallback (use EXIF only)'
+        help='[Advanced] Disable file modification time fallback'
     )
 
     parser.add_argument(
@@ -736,27 +765,20 @@ Examples:
         type=int,
         default=30,
         metavar='DAYS',
-        help='Minimum age in days for file modification time to be considered valid (default: 30)'
+        help='[Advanced] Minimum age for file mtime (default: 30)'
     )
 
     args = parser.parse_args()
 
     try:
-        # Check for exiftool first (required for both modes)
-        if not check_exiftool():
-            console.print("[red]✗ exiftool not found![/red]")
-            console.print("Please install exiftool:")
-            console.print("  macOS:   brew install exiftool")
-            console.print("  Linux:   sudo apt install libimage-exiftool-perl")
-            console.print("  Windows: Download from https://exiftool.org/")
-            sys.exit(1)
-
         # Route to appropriate mode
         if args.reorganize_unknown:
+            # Advanced mode: direct reorganization via command-line
             unknown_path = Path(args.reorganize_unknown).expanduser().resolve()
             use_file_mtime = not args.no_file_mtime
             reorganize_unknown(unknown_path, use_file_mtime, args.min_age_days)
         else:
+            # Normal mode: interactive workflow
             main()
 
     except KeyboardInterrupt:

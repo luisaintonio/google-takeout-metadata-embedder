@@ -1,6 +1,6 @@
 # Reorganizing the Unknown Folder
 
-This guide shows you how to use the enhanced `--reorganize-unknown` feature to move files from your Unknown folder into properly organized date-based folders.
+This guide shows you how to reorganize files from your Unknown folder into properly organized date-based folders.
 
 ## What's New?
 
@@ -11,11 +11,11 @@ The enhanced version now checks **multiple date sources**:
 3. ✅ **EXIF ModifyDate** (when file was modified - fallback for edited files)
 4. ✅ **File modification time** (with safety checks - optional)
 
-## Quick Start (Copy to Another Computer)
+## Quick Start (Easiest Way)
 
-### Step 1: Copy the Tool
+### Step 1: Copy to Another Computer
 
-Copy the entire `google-takeout-metadata-embedder` folder to your other computer:
+Copy the entire `google-takeout-metadata-embedder` folder:
 - Via USB drive, network share, or cloud storage
 - Make sure to copy the entire folder including the `lib/` subdirectory
 
@@ -26,62 +26,58 @@ On the other computer, open Terminal and run:
 ```bash
 # macOS
 brew install exiftool
-brew install python3
 
 # Linux (Ubuntu/Debian)
-sudo apt install libimage-exiftool-perl python3 python3-venv
+sudo apt install libimage-exiftool-perl
 
 # Windows
-# Download Python from python.org
 # Download exiftool from exiftool.org
 ```
 
-### Step 3: Set Up Python Environment
+### Step 3: Run the Tool
 
+**Just run it normally:**
 ```bash
 cd google-takeout-metadata-embedder
-./setup.sh
+./run.sh
 ```
 
-Or manually:
+**That's it!** The tool will:
+1. Ask you for the folder path (e.g., `/Volumes/PortableSSD/Media`)
+2. Detect if an Unknown folder exists
+3. Ask if you want to reorganize Unknown or process normally
+4. Guide you through the options
 
-```bash
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+### Interactive Workflow
+
+When you run `./run.sh`, you'll see:
+
+```
+Enter the path to your Google Takeout folder:
+> /Volumes/PortableSSD/Media
+
+Found existing Unknown folder with 11,235 media file(s)
+Location: /Volumes/PortableSSD/Media/Output/Unknown
+
+Would you like to:
+  1. Reorganize Unknown folder with enhanced date detection
+  2. Process the entire folder normally
+
+Enter choice (1 or 2):
+> 1
+
+Use file modification time as fallback? (y/n):
+Recommended: y - Uses EXIF + safe file dates (older than 30 days)
+> y
+
+Processing 11,235 file(s)...
 ```
 
-### Step 4: Run the Reorganization
+**That's the entire workflow!** No complex commands to remember.
 
-**Basic usage** (recommended):
-```bash
-source venv/bin/activate
-python main.py --reorganize-unknown /path/to/Output/Unknown
-```
+## What You'll See
 
-**EXIF only** (no file modification time):
-```bash
-python main.py --reorganize-unknown /path/to/Output/Unknown --no-file-mtime
-```
-
-**Custom minimum age** (stricter validation):
-```bash
-python main.py --reorganize-unknown /path/to/Output/Unknown --min-age-days 60
-```
-
-## Examples
-
-### Example 1: Reorganize Unknown Folder on External Drive
-
-```bash
-# Activate environment
-source venv/bin/activate
-
-# Run reorganization
-python main.py --reorganize-unknown /Volumes/PortableSSD/Media/Output/Unknown
-```
-
-Output:
+When reorganizing, the tool shows:
 ```
 ✓ Found 11,235 media file(s) to reorganize
 
@@ -110,25 +106,19 @@ Reorganization Summary
 ○ 2,779 file(s) remain in Unknown (no date found)
 ```
 
-### Example 2: Conservative Mode (EXIF Only)
+## Options Explained
 
-If you don't trust file modification times:
+When prompted "Use file modification time as fallback?":
 
-```bash
-python main.py --reorganize-unknown /Volumes/PortableSSD/Media/Output/Unknown --no-file-mtime
-```
+**Choose 'y' (Yes) if:**
+- Files were copied from Google Takeout (preserves original dates)
+- Files are from camera SD card (preserves modification times)
+- Most files are older than 30 days
 
-This will **only** use EXIF data (DateTimeOriginal, CreateDate, ModifyDate) and skip the file modification time fallback.
-
-### Example 3: Stricter Validation
-
-Require files to be at least 60 days old:
-
-```bash
-python main.py --reorganize-unknown /Volumes/PortableSSD/Media/Output/Unknown --min-age-days 60
-```
-
-This rejects any file modification dates from the last 60 days (likely from recent copy operations).
+**Choose 'n' (No) if:**
+- You recently copied/moved files (modification times might be wrong)
+- You want to be conservative (EXIF only)
+- You don't trust file system timestamps
 
 ## How It Works
 
@@ -291,11 +281,27 @@ Expected processing speed:
 
 ## Summary
 
-The `--reorganize-unknown` feature is designed to safely move files from Unknown to proper date folders using multiple fallback methods. It's conservative by default and includes safety checks to avoid incorrect dates.
+The reorganize feature is designed to safely move files from Unknown to proper date folders using multiple fallback methods. It's conservative by default and includes safety checks to avoid incorrect dates.
 
-**Recommended command:**
+**Simple workflow:**
+1. Run `./run.sh`
+2. Point to your folder
+3. Choose option 1 when prompted
+4. Answer 'y' to use file modification time fallback
+
+This should successfully organize **60-80%** of your Unknown folder!
+
+## Advanced: Command-Line Usage
+
+For power users who want to skip the interactive prompts:
+
 ```bash
+# Reorganize with file mtime fallback
 python main.py --reorganize-unknown /path/to/Output/Unknown
-```
 
-This should successfully organize 60-80% of your Unknown folder!
+# EXIF only (no file mtime)
+python main.py --reorganize-unknown /path/to/Output/Unknown --no-file-mtime
+
+# Custom minimum age
+python main.py --reorganize-unknown /path/to/Output/Unknown --min-age-days 60
+```
