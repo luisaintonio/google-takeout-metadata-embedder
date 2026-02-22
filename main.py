@@ -8,6 +8,7 @@ and organizes them by date in a clean folder structure.
 import sys
 import logging
 import os
+import argparse
 from pathlib import Path
 import shutil
 from datetime import datetime
@@ -34,7 +35,7 @@ from lib.metadata import (
 )
 from lib.organizer import get_output_path, ensure_output_directory
 from lib.exiftool import check_exiftool, embed_metadata
-from lib.exif_reader import read_exif_date, has_matching_metadata
+from lib.exif_reader import read_exif_date, has_matching_metadata, read_any_date
 from lib.state import ProcessingState
 
 # Setup logging
@@ -322,6 +323,179 @@ def display_final_summary(total: int, successful: int, failed: int):
     console.print(f"\n[dim]Check metadata_embedder.log for detailed information[/dim]")
 
 
+def reorganize_unknown(unknown_folder: Path, use_file_mtime: bool = True, min_age_days: int = 30):
+    """Reorganize files from Unknown folder using enhanced date detection.
+
+    Args:
+        unknown_folder: Path to Unknown folder
+        use_file_mtime: Whether to use file modification time as fallback
+        min_age_days: Minimum age for file mtime to be considered valid
+    """
+    console.print("\n[cyan]Reorganizing Unknown Folder Mode[/cyan]")
+    console.print(f"[dim]Source: {unknown_folder}[/dim]\n")
+
+    # Validate Unknown folder exists
+    if not unknown_folder.exists() or not unknown_folder.is_dir():
+        console.print(f"[red]✗ Unknown folder not found: {unknown_folder}[/red]")
+        sys.exit(1)
+
+    # Determine output base (parent of Unknown folder)
+    output_base = unknown_folder.parent
+    console.print(f"[dim]Output base: {output_base}[/dim]\n")
+
+    # Scan for media files in Unknown folder
+    console.print("[cyan]Scanning Unknown folder for media files...[/cyan]")
+
+    from lib.scanner import MEDIA_EXTENSIONS
+    media_files = []
+
+    for file_path in unknown_folder.iterdir():
+        if file_path.is_file() and file_path.suffix.lower() in MEDIA_EXTENSIONS:
+            # Skip macOS resource fork files
+            if not file_path.name.startswith('._'):
+                media_files.append(file_path)
+
+    if len(media_files) == 0:
+        console.print("[yellow]✗ No media files found in Unknown folder.[/yellow]")
+        sys.exit(0)
+
+    console.print(f"[green]✓ Found {len(media_files)} media file(s) to reorganize[/green]\n")
+
+    # Display options
+    console.print("[yellow]Date detection options:[/yellow]")
+    console.print(f"  • EXIF DateTimeOriginal, CreateDate, ModifyDate: [green]Enabled[/green]")
+    console.print(f"  • File modification time fallback: [{'green' if use_file_mtime else 'red'}]{'Enabled' if use_file_mtime else 'Disabled'}[/{'green' if use_file_mtime else 'red'}]")
+    if use_file_mtime:
+        console.print(f"  • Minimum file age: [cyan]{min_age_days} days[/cyan]")
+    console.print()
+
+    # Confirm
+    console.print("[yellow]This will move files from Unknown to proper year/month folders. Continue? (y/n):[/yellow]")
+    confirm = input("> ").strip().lower()
+    if confirm != 'y':
+        console.print("[dim]Cancelled by user[/dim]")
+        sys.exit(0)
+
+    # Process files
+    console.print(f"\n[cyan]Processing {len(media_files)} file(s)...[/cyan]\n")
+
+    successful = 0
+    failed = 0
+    still_unknown = 0
+    lock = threading.Lock()
+
+    # Determine number of workers
+    import multiprocessing
+    max_workers = min(8, max(4, multiprocessing.cpu_count() - 1))
+
+    def reorganize_single_file(media_file: Path) -> Tuple[bool, str, bool]:
+        """Reorganize a single file.
+
+        Returns:
+            Tuple of (success, message, still_in_unknown)
+        """
+        try:
+            # Try to read date using enhanced detection
+            date_result = read_any_date(media_file, use_file_mtime, min_age_days)
+
+            if date_result is None:
+                # Still no date found
+                return True, "No date found (remains in Unknown)", True
+
+            dt, source = date_result
+
+            # Calculate new output path
+            # We need to create a fake "input_root" that points to output_base
+            # So that get_output_path creates the right structure
+            new_output_path = get_output_path(output_base, media_file, dt)
+
+            # Check if file would stay in Unknown
+            if "Unknown" in new_output_path.parts:
+                return True, "No date found (remains in Unknown)", True
+
+            # Ensure output directory exists
+            if not ensure_output_directory(new_output_path):
+                return False, "Failed to create output directory", False
+
+            # Move file to new location
+            try:
+                shutil.move(str(media_file), str(new_output_path))
+                logger.info(f"Moved {media_file.name} to {new_output_path.relative_to(output_base)}")
+
+                # Update file system timestamp to match detected date
+                try:
+                    timestamp = dt.timestamp()
+                    os.utime(new_output_path, (timestamp, timestamp))
+                except OSError as e:
+                    logger.warning(f"Could not update file timestamp: {e}")
+
+                return True, f"{source}: {dt.strftime('%Y-%m-%d')}", False
+
+            except IOError as e:
+                return False, f"Failed to move file: {e}", False
+
+        except Exception as e:
+            logger.exception(f"Unexpected error processing {media_file.name}")
+            return False, f"Unexpected error: {e}", False
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console
+    ) as progress:
+
+        task = progress.add_task("Processing...", total=len(media_files))
+
+        # Process files in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_file = {executor.submit(reorganize_single_file, f): f for f in media_files}
+
+            for future in as_completed(future_to_file):
+                media_file = future_to_file[future]
+                success, message, in_unknown = future.result()
+
+                with lock:
+                    progress.update(task, description=f"[{successful + failed + still_unknown + 1}/{len(media_files)}] {media_file.name[:30]}...")
+
+                    if success:
+                        if in_unknown:
+                            still_unknown += 1
+                            logger.info(f"○ {media_file.name}: {message}")
+                        else:
+                            successful += 1
+                            logger.info(f"✓ {media_file.name}: {message}")
+                    else:
+                        failed += 1
+                        logger.error(f"✗ {media_file.name}: {message}")
+
+                    progress.advance(task)
+
+    # Display summary
+    console.print("\n")
+    table = Table(title="Reorganization Summary", box=box.DOUBLE, border_style="green")
+    table.add_column("Metric", style="bold")
+    table.add_column("Count", justify="right")
+
+    table.add_row("Total Files", str(len(media_files)))
+    table.add_row("Successfully Reorganized", f"[green]{successful}[/green]")
+    table.add_row("Remain in Unknown", f"[yellow]{still_unknown}[/yellow]")
+    table.add_row("Failed", f"[red]{failed}[/red]" if failed > 0 else "0")
+
+    console.print(table)
+
+    if successful > 0:
+        console.print(f"\n[bold green]✓ {successful} file(s) reorganized successfully![/bold green]")
+    if still_unknown > 0:
+        console.print(f"[yellow]○ {still_unknown} file(s) remain in Unknown (no date found)[/yellow]")
+    if failed > 0:
+        console.print(f"[red]✗ {failed} file(s) failed to process[/red]")
+
+    console.print(f"\n[dim]Check metadata_embedder.log for detailed information[/dim]")
+
+
 def main():
     """Main entry point."""
     print_banner()
@@ -524,8 +698,67 @@ def main():
 
 
 if __name__ == "__main__":
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="Google Takeout Metadata Embedder - Organize photos by date",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Normal mode: process entire Google Takeout folder
+  python main.py
+
+  # Reorganize Unknown folder with enhanced date detection
+  python main.py --reorganize-unknown /path/to/Output/Unknown
+
+  # Reorganize without using file modification time (EXIF only)
+  python main.py --reorganize-unknown /path/to/Output/Unknown --no-file-mtime
+
+  # Custom minimum age for file modification time
+  python main.py --reorganize-unknown /path/to/Output/Unknown --min-age-days 60
+        """
+    )
+
+    parser.add_argument(
+        '--reorganize-unknown',
+        type=str,
+        metavar='PATH',
+        help='Path to Unknown folder to reorganize using enhanced date detection'
+    )
+
+    parser.add_argument(
+        '--no-file-mtime',
+        action='store_true',
+        help='Disable file modification time fallback (use EXIF only)'
+    )
+
+    parser.add_argument(
+        '--min-age-days',
+        type=int,
+        default=30,
+        metavar='DAYS',
+        help='Minimum age in days for file modification time to be considered valid (default: 30)'
+    )
+
+    args = parser.parse_args()
+
     try:
-        main()
+        # Check for exiftool first (required for both modes)
+        if not check_exiftool():
+            console.print("[red]✗ exiftool not found![/red]")
+            console.print("Please install exiftool:")
+            console.print("  macOS:   brew install exiftool")
+            console.print("  Linux:   sudo apt install libimage-exiftool-perl")
+            console.print("  Windows: Download from https://exiftool.org/")
+            sys.exit(1)
+
+        # Route to appropriate mode
+        if args.reorganize_unknown:
+            unknown_path = Path(args.reorganize_unknown).expanduser().resolve()
+            use_file_mtime = not args.no_file_mtime
+            reorganize_unknown(unknown_path, use_file_mtime, args.min_age_days)
+        else:
+            main()
+
     except KeyboardInterrupt:
         console.print("\n\n[yellow]⚠ Interrupted by user[/yellow]")
         console.print("[green]✓ Progress has been saved. Run again to resume from where you left off.[/green]")
